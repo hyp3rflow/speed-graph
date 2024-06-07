@@ -1,43 +1,102 @@
-import { useEffect, useState } from 'preact/hooks'
-import { signal, effect } from '@preact/signals'
+import { signal, effect, computed } from '@preact/signals'
+import { requestPort } from './serial';
 import './app.css'
 
-const portsSignal = signal<SerialPort[]>([]);
-effect(() => console.log(portsSignal.value))
-
-function refreshPorts() {
-  navigator.serial.getPorts().then(ports => {
-    portsSignal.value = ports;
-  })
+interface Message {
+  x: number;
+  y: number;
+  z: number;
 }
 
-export function App() {
-  const [count, setCount] = useState(0)
+interface RawVelocity {
+  x: number;
+  y: number;
+}
 
-  useEffect(() => {
-    refreshPorts();
-    navigator.serial.addEventListener("connect", refreshPorts);
-    navigator.serial.addEventListener("disconnect", refreshPorts);
-    return () => {
-      navigator.serial.removeEventListener("connect", refreshPorts);
-      navigator.serial.removeEventListener("disconnect", refreshPorts);
+const portSignal = signal<SerialPort | undefined>(undefined);
+const windowSignal = signal<string>("");
+const messagesSignal = signal<Message[]>([]);
+const velocitiesSignal = signal<RawVelocity[]>([]);
+const dataSignal = computed(() => velocitiesSignal.value.map(v => Math.sqrt(Math.pow(v.x, 2) + Math.pow(v.y, 2))))
+
+const vX = signal(0);
+const vY = signal(0);
+const aX = signal(0);
+const aY = signal(0);
+
+effect(async () => {
+  const port = portSignal.value;
+  if (port && port.readable) {
+    const reader = port.readable.getReader();
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      const incoming = new TextDecoder().decode(value);
+      windowSignal.value = windowSignal.peek() + incoming;
+      console.log(windowSignal.peek());
+      processWindow();
     }
-  }, []);
+  }
+  function processWindow() {
+    const inputs = windowSignal.value.split("\n");
+    const last = inputs.pop()!;
+    const messages = inputs.map(parseMessage);
+    const velocities = messages.map(getVelocity);
+    messagesSignal.value = [...messagesSignal.peek(), ...messages];
+    velocitiesSignal.value = [...velocitiesSignal.peek(), ...velocities];
+    windowSignal.value = last;
+  }
+  function parseMessage(str: string) {
+    const matched = str.match(/x = ([0-9A-F]{4})y = ([0-9A-F]{4})z = ([0-9A-F]{4})/);
+    if (!matched) throw "invalid message format";
+    const [_, x, y, z] = matched;
+    return {
+      x: toAcceleration(x),
+      y: toAcceleration(y),
+      z: toAcceleration(z)
+    }
+  } 
+  function toAcceleration(hex: string) {
+    const raw = new Int16Array([Number.parseInt(hex, 16)])[0];
+    return ((raw / 16384) * 9.8) | 0;
+  }
+  function getVelocity(curr: Message) {
+    const { x, y } = curr;
+    const currVx = vX.value + (aX.value + x) * 0.1;
+    const currVy = vY.value + (aY.value + y) * 0.1;
+    vX.value = currVx;
+    vY.value = currVy;
+    return { x: currVx, y: currVy };
+  }
+})
 
+export function App() {
   return (
     <>
-      <h1>Vite + Preact</h1>
+      <h1>Speed graph</h1>
       <div class="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
+        <button onClick={async () => {
+          const port = await requestPort();
+          await port.open({ baudRate: 115200 });
+          portSignal.value = port;
+        }}>
+          Request Serial Port
         </button>
-        <p>
-          Edit <code>src/app.tsx</code> and save to test HMR
-        </p>
+        &nbsp;&nbsp;
+        <button onClick={() => {
+          messagesSignal.value = [];
+        }}>
+          Clear
+        </button>
       </div>
-      <p class="read-the-docs">
-        Click on the Vite and Preact logos to learn more
-      </p>
+      <svg width="500" height="600">
+        <polyline
+          points={dataSignal.value.slice(-50).map((v, idx) => `${idx * 10},${300 - (v * 10)}`).join(" ")}
+          stroke="hsla(170, 70%, 57%)"
+          fill="none"
+        />
+      </svg>
+      <pre>{JSON.stringify(velocitiesSignal.value.slice(-1)[0])}</pre>
     </>
   )
 }
