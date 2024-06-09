@@ -89,9 +89,38 @@ export function App() {
           Clear
         </button>
       </div>
-      <svg width="500" height="600">
+      <svg width="830" height="400">
+        {[...Array((300 / (10 * 3)) + 1)].map((_, i) => {
+          return <>
+            <text
+              x="25"
+              y={50 + i * 30}
+              fill="#666"
+              alignment-baseline="middle"
+              text-anchor="end" 
+            >
+              {30 - (i * 3)}
+            </text>
+            <line
+              stroke="#444"
+              strokeWidth="0.5"
+              x1="30"
+              y1={50 + i * 30}
+              x2="830"
+              y2={50 + i * 30}
+            />
+          </>;
+        })}
+        <line
+          stroke="#666"
+          strokeWidth="0.5"
+          x1="30"
+          y1="350"
+          x2="830"
+          y2="350"
+        />
         <polyline
-          points={dataSignal.value.slice(-50).map((v, idx) => `${idx * 10},${300 - (v * 10)}`).join(" ")}
+          points={dataSignal.value.slice(-80).map((v, idx) => `${idx * 10 + 30},${350 - (v * 10)}`).join(" ")}
           stroke="hsla(170, 70%, 57%)"
           fill="none"
         />
