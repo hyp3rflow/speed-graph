@@ -13,6 +13,7 @@ interface RawVelocity {
   y: number;
 }
 
+const rawSignal = signal<string>("");
 const portSignal = signal<SerialPort | undefined>(undefined);
 const windowSignal = signal<string>("");
 const messagesSignal = signal<Message[]>([]);
@@ -32,6 +33,7 @@ effect(async () => {
       const { value, done } = await reader.read();
       if (done) break;
       const incoming = new TextDecoder().decode(value);
+      rawSignal.value = rawSignal.peek() + incoming;
       windowSignal.value = windowSignal.peek() + incoming;
       console.log(windowSignal.peek());
       processWindow();
@@ -84,9 +86,19 @@ export function App() {
         </button>
         &nbsp;&nbsp;
         <button onClick={() => {
-          messagesSignal.value = [];
+          const href = URL.createObjectURL(
+            new Blob([JSON.stringify({
+              raw: rawSignal.value,
+              messages: messagesSignal.value,
+              velocities: velocitiesSignal.value,
+            })]),
+          );
+          const a = document.createElement('a');
+          a.href = href;
+          a.download = 'log.json';
+          a.click();
         }}>
-          Clear
+          Save
         </button>
       </div>
       <svg width="830" height="400">
